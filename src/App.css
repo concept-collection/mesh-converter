@@ -19,9 +19,30 @@
 }
 
 .tagline {
-  margin: 0 0 16px;
+  margin: 0 0 10px;
   color: #9aa1ac;
   font-size: 13px;
+}
+
+.tagline a {
+  color: #7fb0e0;
+}
+
+.engine-status {
+  margin: 0 0 16px;
+  font-size: 12px;
+}
+
+.engine-status.loading {
+  color: #ecc477;
+}
+
+.engine-status.ready {
+  color: #8fd7ab;
+}
+
+.engine-status.error {
+  color: #f2a3a3;
 }
 
 .sidebar section {
@@ -161,6 +182,22 @@ select {
   font-weight: 500;
 }
 
+.format-table tbody tr {
+  cursor: pointer;
+}
+
+.format-table tbody tr:hover {
+  background: #262b34;
+}
+
+.format-table tbody tr.selected {
+  background: rgba(47, 111, 179, 0.18);
+}
+
+.format-table tbody tr.selected td:first-child {
+  color: #9cc4ea;
+}
+
 .format-table th:not(:first-child),
 .format-table td:not(:first-child) {
   text-align: center;
@@ -169,6 +206,29 @@ select {
 .ext {
   color: #7f8794;
   font-size: 12px;
+}
+
+.format-table td.size {
+  color: #9aa1ac;
+  white-space: nowrap;
+}
+
+button.subtle {
+  margin-top: 8px;
+  padding: 3px 8px;
+  font-size: 12px;
+  color: #9aa1ac;
+  background: transparent;
+  border-color: #2c313a;
+}
+
+button.subtle:hover {
+  background: #2a2f39;
+}
+
+button.subtle:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .footnote {
@@ -181,6 +241,42 @@ select {
   flex: 1;
   min-width: 0;
   position: relative;
+}
+
+.view-toolbar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  display: flex;
+  gap: 0;
+  border: 1px solid #3a4150;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(30, 33, 40, 0.85);
+}
+
+.view-toolbar button {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: #9aa1ac;
+}
+
+.view-toolbar button + button {
+  border-left: 1px solid #3a4150;
+}
+
+.view-toolbar button:hover {
+  background: #2a2f39;
+  color: #e2e5ea;
+}
+
+.view-toolbar button.active {
+  background: rgba(47, 111, 179, 0.35);
+  color: #d9e8f7;
 }
 
 .empty-state {

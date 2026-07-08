@@ -38,7 +38,12 @@ export function makeSampleMesh(): MeshData {
     }
   }
 
-  return { name: 'Rainbow Torus', positions, indices, normals, colors }
+  return {
+    positions: new Float32Array(positions),
+    indices: new Uint32Array(indices),
+    normals: new Float32Array(normals),
+    colors: new Float32Array(colors),
+  }
 }
 
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
