@@ -231,6 +231,20 @@ button.subtle:disabled {
   cursor: default;
 }
 
+input.share-url {
+  font: inherit;
+  font-size: 12px;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid #3a4150;
+  background: #2a2f39;
+  color: #e2e5ea;
+}
+
 .footnote {
   margin: 8px 0 0;
   color: #6b7280;

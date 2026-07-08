@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { MeshView } from './MeshView'
+import { VIEW_MODES } from './viewModes'
+import type { ViewMode } from './viewModes'
 import type { MeshData } from './mesh/types'
 import { faceCount, vertexCount } from './mesh/types'
 import { acceptedExtensions, conversionLosses, formatForFilename, formats } from './mesh/formats'
@@ -11,9 +13,25 @@ import {
   serializeMesh,
 } from './mesh/meshio'
 import { makeSampleMesh } from './mesh/sample'
+import { buildShareUrl, MAX_SHARE_URL_CHARS, parseShareHash } from './share'
 import './App.css'
 
 type EngineState = 'loading' | 'ready' | 'error'
+
+/**
+ * What a share link would carry: the original uploaded file (so the recipient
+ * gets byte-identical data in the original format), or a marker for the
+ * generated sample mesh.
+ */
+type ShareSource =
+  | { kind: 'file'; formatId: string; bytes: Uint8Array<ArrayBuffer> }
+  | { kind: 'sample' }
+
+type ShareStatus =
+  | { kind: 'copied'; chars: number }
+  | { kind: 'manual'; url: string } // clipboard unavailable — show the link for hand-copying
+  | { kind: 'too-large'; chars: number }
+  | { kind: 'error'; message: string }
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
@@ -34,7 +52,11 @@ function App() {
   })
   const [busy, setBusy] = useState<'parsing' | 'exporting' | 'sizing' | null>(null)
   const [exportSizes, setExportSizes] = useState<Record<string, number> | null>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>('both')
+  const [shareSource, setShareSource] = useState<ShareSource | null>(null)
+  const [shareStatus, setShareStatus] = useState<ShareStatus | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const shareLoadAttempted = useRef(false)
 
   const exportFormat = formats.find((f) => f.id === exportFormatId) ?? formats[0]
   const losses = mesh ? conversionLosses(mesh, exportFormat) : []
@@ -62,6 +84,65 @@ function App() {
     }
   }, [])
 
+  // Load a mesh from a #share=… link on startup (parseMeshFile waits for the
+  // engine init kicked off above).
+  useEffect(() => {
+    if (shareLoadAttempted.current) return
+    shareLoadAttempted.current = true
+    ;(async () => {
+      let payload
+      try {
+        payload = await parseShareHash(window.location.hash)
+      } catch (e) {
+        setError(`Could not read the share link: ${e instanceof Error ? e.message : String(e)}`)
+        return
+      }
+      if (!payload) return
+      if (formats.some((f) => f.id === payload.exportFormatId)) {
+        setExportFormatId(payload.exportFormatId)
+      }
+      if (VIEW_MODES.some((m) => m.id === payload.viewMode)) {
+        setViewMode(payload.viewMode as ViewMode)
+      }
+      if (payload.formatId === null) {
+        setMesh(makeSampleMesh())
+        setShareSource({ kind: 'sample' })
+        setParseWarnings([])
+        setSourceLabel('built-in sample (from share link)')
+        setBaseName(payload.name || 'rainbow_torus')
+        return
+      }
+      const format = formats.find((f) => f.id === payload.formatId)
+      if (!format) {
+        setError(`Could not read the share link: unknown mesh format "${payload.formatId}"`)
+        return
+      }
+      setBusy('parsing')
+      try {
+        const { mesh: parsed, info } = await parseMeshFile(payload.bytes, format)
+        setMesh(parsed)
+        setShareSource({ kind: 'file', formatId: format.id, bytes: payload.bytes })
+        setParseWarnings(info.warnings)
+        setSourceLabel(`${payload.name}${format.extension} (${format.label}, from share link)`)
+        setBaseName(payload.name || 'mesh')
+      } catch (e) {
+        setError(
+          `Could not load the shared mesh: ${e instanceof Error ? e.message : String(e)}`,
+        )
+      } finally {
+        setBusy(null)
+      }
+    })()
+  }, [])
+
+  // A share link only describes the mesh it was created for — drop it from
+  // the address bar once a different mesh is loaded.
+  const clearShareHash = () => {
+    if (window.location.hash) {
+      history.replaceState(null, '', window.location.pathname + window.location.search)
+    }
+  }
+
   const handleFile = async (file: File) => {
     setError(null)
     const format = formatForFilename(file.name)
@@ -80,6 +161,9 @@ function App() {
       setParseWarnings(info.warnings)
       setSourceLabel(`${file.name} (${format.label})`)
       setBaseName(file.name.replace(/\.[^.]+$/, ''))
+      setShareSource({ kind: 'file', formatId: format.id, bytes })
+      setShareStatus(null)
+      clearShareHash()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -94,6 +178,35 @@ function App() {
     setParseWarnings([])
     setSourceLabel('built-in sample')
     setBaseName('rainbow_torus')
+    setShareSource({ kind: 'sample' })
+    setShareStatus(null)
+    clearShareHash()
+  }
+
+  const shareMesh = async () => {
+    if (!shareSource) return
+    setShareStatus(null)
+    try {
+      const url = await buildShareUrl({
+        name: baseName,
+        formatId: shareSource.kind === 'file' ? shareSource.formatId : null,
+        exportFormatId,
+        viewMode,
+        bytes: shareSource.kind === 'file' ? shareSource.bytes : new Uint8Array(0),
+      })
+      if (url.length > MAX_SHARE_URL_CHARS) {
+        setShareStatus({ kind: 'too-large', chars: url.length })
+        return
+      }
+      try {
+        await navigator.clipboard.writeText(url)
+        setShareStatus({ kind: 'copied', chars: url.length })
+      } catch {
+        setShareStatus({ kind: 'manual', url })
+      }
+    } catch (e) {
+      setShareStatus({ kind: 'error', message: e instanceof Error ? e.message : String(e) })
+    }
   }
 
   const estimateSizes = async () => {
@@ -227,6 +340,45 @@ function App() {
           </section>
         )}
 
+        {mesh && shareSource && (
+          <section>
+            <h2>Share</h2>
+            <button onClick={shareMesh} disabled={busy !== null}>
+              Copy share link
+            </button>
+            {shareStatus?.kind === 'copied' && (
+              <div className="ok">
+                Link copied to clipboard ({shareStatus.chars.toLocaleString()} characters).
+              </div>
+            )}
+            {shareStatus?.kind === 'manual' && (
+              <div className="warning">
+                Couldn’t write to the clipboard — copy the link below by hand.
+                <input
+                  className="share-url"
+                  readOnly
+                  value={shareStatus.url}
+                  onFocus={(e) => e.target.select()}
+                />
+              </div>
+            )}
+            {shareStatus?.kind === 'too-large' && (
+              <div className="warning">
+                This mesh is too large to share by URL: the link would be{' '}
+                {shareStatus.chars.toLocaleString()} characters, beyond the{' '}
+                {MAX_SHARE_URL_CHARS.toLocaleString()} that links can reliably carry. Download
+                the file and share it directly instead.
+              </div>
+            )}
+            {shareStatus?.kind === 'error' && <div className="error">{shareStatus.message}</div>}
+            <p className="footnote">
+              The link embeds the compressed mesh (the original file) plus the export and view
+              settings in the URL itself — nothing is uploaded anywhere. Whoever opens it can
+              view the mesh and download it in any format.
+            </p>
+          </section>
+        )}
+
         <section>
           <h2>Formats</h2>
           <table className="format-table">
@@ -279,7 +431,7 @@ function App() {
 
       <div className="viewport">
         {mesh ? (
-          <MeshView mesh={mesh} />
+          <MeshView mesh={mesh} mode={viewMode} onModeChange={setViewMode} />
         ) : (
           <div className="empty-state">
             <p>No mesh loaded.</p>

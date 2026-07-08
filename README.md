@@ -53,6 +53,15 @@ holds it pre-exported in a few formats. An on-demand "estimate export sizes"
 action serializes the loaded mesh to every format in memory and shows the
 resulting file sizes in the format table and export dropdown.
 
+A loaded mesh can be shared as a self-contained link: "Copy share link" packs
+the original uploaded file (byte-identical, in its original format) together
+with the chosen export format and view mode into the URL fragment —
+deflate-compressed and base64url-encoded after `#share=`. Nothing is uploaded;
+the data lives in the URL itself, so whoever opens the link sees the mesh and
+can download it in any format. Links are capped at 65,000 characters (roughly
+a 100–300 KB mesh file, depending on how well it compresses); beyond that the
+app says the mesh is too large to share by URL.
+
 ## Development
 
 ```bash

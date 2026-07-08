@@ -1,17 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import type { MeshData } from './mesh/types'
-
-type ViewMode = 'shaded' | 'wire' | 'both' | 'points'
-
-const VIEW_MODES: { id: ViewMode; label: string }[] = [
-  { id: 'shaded', label: 'Shaded' },
-  { id: 'wire', label: 'Wire' },
-  { id: 'both', label: 'Both' },
-  { id: 'points', label: 'Points' },
-]
+import { VIEW_MODES } from './viewModes'
+import type { ViewMode } from './viewModes'
 
 const PLAIN_COLOR = '#8fb4d9'
 
@@ -87,9 +80,15 @@ function MeshObject({ mesh, mode }: { mesh: MeshData; mode: ViewMode }) {
   )
 }
 
-export function MeshView({ mesh }: { mesh: MeshData }) {
-  const [mode, setMode] = useState<ViewMode>('both')
-
+export function MeshView({
+  mesh,
+  mode,
+  onModeChange,
+}: {
+  mesh: MeshData
+  mode: ViewMode
+  onModeChange: (mode: ViewMode) => void
+}) {
   return (
     <>
       <div className="view-toolbar">
@@ -97,7 +96,7 @@ export function MeshView({ mesh }: { mesh: MeshData }) {
           <button
             key={m.id}
             className={mode === m.id ? 'active' : ''}
-            onClick={() => setMode(m.id)}
+            onClick={() => onModeChange(m.id)}
           >
             {m.label}
           </button>
