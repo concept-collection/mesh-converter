@@ -17,6 +17,7 @@ import {
 } from './mesh/meshio'
 import { makeSampleMesh } from './mesh/sample'
 import { buildShareUrl, MAX_SHARE_URL_CHARS, parseShareHash } from './share'
+import spotUrl from './assets/spot_triangulated.obj?url'
 import './App.css'
 
 type EngineState = 'loading' | 'ready' | 'error'
@@ -122,7 +123,7 @@ function App() {
         setMesh(makeSampleMesh())
         setSource({ kind: 'sample' })
         setParseWarnings([])
-        setSourceLabel('built-in sample (from share link)')
+        setSourceLabel('rainbow torus (built-in, from share link)')
         setBaseName(payload.name || 'rainbow_torus')
         return
       }
@@ -185,16 +186,35 @@ function App() {
     }
   }
 
-  const loadSample = () => {
+  const loadTorus = () => {
     setError(null)
     setMesh(makeSampleMesh())
     setExportSizes(null)
     setParseWarnings([])
-    setSourceLabel('built-in sample')
+    setSourceLabel('rainbow torus (built-in)')
     setBaseName('rainbow_torus')
     setSource({ kind: 'sample' })
     setShareStatus(null)
     clearShareHash()
+  }
+
+  // Spot (Keenan Crane, public domain) ships with the app as a real OBJ file,
+  // so it flows through the same path as an upload — original bytes kept as
+  // the export/share source of truth.
+  const loadSpot = async () => {
+    setError(null)
+    setBusy('parsing')
+    let file: File
+    try {
+      const resp = await fetch(spotUrl)
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      file = new File([await resp.arrayBuffer()], 'spot.obj')
+    } catch (e) {
+      setError(`Could not fetch the spot mesh: ${e instanceof Error ? e.message : String(e)}`)
+      setBusy(null)
+      return
+    }
+    await handleFile(file)
   }
 
   const shareMesh = async () => {
@@ -301,16 +321,21 @@ function App() {
 
         <section>
           <h2>Load</h2>
-          <div className="button-row">
+          <div className="load-buttons">
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={!engineReady || busy !== null}
             >
               {busy === 'parsing' ? 'Reading…' : 'Open mesh file…'}
             </button>
-            <button onClick={loadSample} disabled={busy !== null}>
-              Load sample
-            </button>
+            <div className="button-row">
+              <button onClick={loadTorus} disabled={busy !== null}>
+                Load torus
+              </button>
+              <button onClick={loadSpot} disabled={!engineReady || busy !== null}>
+                Load spot
+              </button>
+            </div>
           </div>
           <input
             ref={fileInputRef}
@@ -482,7 +507,7 @@ function App() {
         ) : (
           <div className="empty-state">
             <p>No mesh loaded.</p>
-            <p>Open a {acceptedExtensions.join(', ')} file — or load the sample.</p>
+            <p>Open a {acceptedExtensions.join(', ')} file — or load a built-in sample.</p>
           </div>
         )}
       </div>

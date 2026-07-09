@@ -34,6 +34,35 @@ COLORS_F32 = WORK + "/colors.f32"
 os.makedirs(WORK, exist_ok=True)
 
 
+class _ObjTolerantMesh(meshio.Mesh):
+    """OBJ faces index texture coordinates and normals independently of
+    vertex positions, so a file with UV seams legally has more vt (or vn)
+    entries than v entries. meshio shoehorns those into point_data, whose
+    per-vertex length check then rejects the whole file; drop the unmappable
+    arrays instead and remember what was dropped so callers can warn."""
+
+    def __init__(self, points, cells, point_data=None, **kwargs):
+        point_data = point_data or {}
+        self.dropped_point_data = {
+            key: len(value)
+            for key, value in point_data.items()
+            if len(value) != len(points)
+        }
+        point_data = {
+            key: value
+            for key, value in point_data.items()
+            if key not in self.dropped_point_data
+        }
+        super().__init__(points, cells, point_data=point_data, **kwargs)
+
+
+# the reader binds Mesh at module level, so this rebinding scopes the
+# tolerance to OBJ reads only (elsewhere a mismatch means real corruption)
+meshio.obj._obj.Mesh = _ObjTolerantMesh
+
+_OBJ_POINT_DATA_NAMES = {"obj:vt": "texture coordinates", "obj:vn": "vertex normals"}
+
+
 def _triangulate_cells(mesh, warnings):
     """Collect surface cells as triangles, fan-triangulating quads/polygons."""
     tri_blocks = []
@@ -151,6 +180,12 @@ def parse_mesh_file(path, file_format=None):
         mesh = meshio.read(path, file_format)
     except SystemExit:
         raise ValueError(f"Could not read file as {file_format or 'any known format'}")
+
+    for key, count in getattr(mesh, "dropped_point_data", {}).items():
+        name = _OBJ_POINT_DATA_NAMES.get(key, key)
+        warnings.append(
+            f"dropped {name}: {count} entries for {len(mesh.points)} vertices"
+        )
 
     points = np.asarray(mesh.points, dtype=np.float32)
     if points.ndim != 2:

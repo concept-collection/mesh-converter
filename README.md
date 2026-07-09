@@ -63,9 +63,11 @@ cannot roundtrip their own output in meshio 5.3.5; exodus fails writing under
 wasm; flac3d holds volume cells only; wkt's reader hangs on non-toy meshes;
 tetgen spans two files; svg is write-only.
 
-A built-in sample mesh (a rainbow torus with normals and vertex colors) is
-available from the UI for trying things out without a file, and `examples/`
-holds it pre-exported in a few formats. An on-demand "estimate export sizes"
+Two built-in sample meshes are available from the UI for trying things out
+without a file: a generated rainbow torus with normals and vertex colors
+(`examples/` holds it pre-exported in a few formats), and Keenan Crane's
+public-domain [Spot](https://www.cs.cmu.edu/~kmcrane/Projects/ModelRepository/)
+cow, bundled as a real OBJ file so it exercises the upload path. An on-demand "estimate export sizes"
 action serializes the loaded mesh to every format in memory and shows the
 resulting file sizes in the format table and export dropdown.
 
