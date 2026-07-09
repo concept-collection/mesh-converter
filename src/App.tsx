@@ -5,7 +5,10 @@ import type { ViewMode } from './viewModes'
 import type { MeshData } from './mesh/types'
 import { faceCount, vertexCount } from './mesh/types'
 import { acceptedExtensions, conversionLosses, formatForFilename, formats } from './mesh/formats'
+import type { MeshFormat } from './mesh/formats'
 import {
+  convertMesh,
+  estimateConvertSize,
   estimateExportSize,
   getMeshioVersion,
   initMeshio,
@@ -19,11 +22,16 @@ import './App.css'
 type EngineState = 'loading' | 'ready' | 'error'
 
 /**
- * What a share link would carry: the original uploaded file (so the recipient
- * gets byte-identical data in the original format), or a marker for the
- * generated sample mesh.
+ * The mesh's source of truth, kept in its original native form. Export and
+ * share both read from this rather than from the viewer's common `MeshData`,
+ * so a conversion loses only what the target format cannot express — and a
+ * same-format export returns the original bytes verbatim.
+ *
+ * `file` is an uploaded or shared file, byte-for-byte in its original format.
+ * `sample` is the built-in mesh, generated directly as `MeshData` (its own
+ * lossless ground truth), so it has no native bytes to keep.
  */
-type ShareSource =
+type MeshSource =
   | { kind: 'file'; formatId: string; bytes: Uint8Array<ArrayBuffer> }
   | { kind: 'sample' }
 
@@ -53,13 +61,17 @@ function App() {
   const [busy, setBusy] = useState<'parsing' | 'exporting' | 'sizing' | null>(null)
   const [exportSizes, setExportSizes] = useState<Record<string, number> | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('both')
-  const [shareSource, setShareSource] = useState<ShareSource | null>(null)
+  const [source, setSource] = useState<MeshSource | null>(null)
   const [shareStatus, setShareStatus] = useState<ShareStatus | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const shareLoadAttempted = useRef(false)
 
   const exportFormat = formats.find((f) => f.id === exportFormatId) ?? formats[0]
-  const losses = mesh ? conversionLosses(mesh, exportFormat) : []
+  const sourceFormat =
+    source?.kind === 'file' ? (formats.find((f) => f.id === source.formatId) ?? null) : null
+  // A same-format export of an uploaded file is the original bytes, untouched.
+  const identicalToSource = source?.kind === 'file' && source.formatId === exportFormat.id
+  const losses = mesh && !identicalToSource ? conversionLosses(mesh, exportFormat) : []
   const engineReady = engine.state === 'ready'
 
   useEffect(() => {
@@ -106,7 +118,7 @@ function App() {
       }
       if (payload.formatId === null) {
         setMesh(makeSampleMesh())
-        setShareSource({ kind: 'sample' })
+        setSource({ kind: 'sample' })
         setParseWarnings([])
         setSourceLabel('built-in sample (from share link)')
         setBaseName(payload.name || 'rainbow_torus')
@@ -121,7 +133,7 @@ function App() {
       try {
         const { mesh: parsed, info } = await parseMeshFile(payload.bytes, format)
         setMesh(parsed)
-        setShareSource({ kind: 'file', formatId: format.id, bytes: payload.bytes })
+        setSource({ kind: 'file', formatId: format.id, bytes: payload.bytes })
         setParseWarnings(info.warnings)
         setSourceLabel(`${payload.name}${format.extension} (${format.label}, from share link)`)
         setBaseName(payload.name || 'mesh')
@@ -161,7 +173,7 @@ function App() {
       setParseWarnings(info.warnings)
       setSourceLabel(`${file.name} (${format.label})`)
       setBaseName(file.name.replace(/\.[^.]+$/, ''))
-      setShareSource({ kind: 'file', formatId: format.id, bytes })
+      setSource({ kind: 'file', formatId: format.id, bytes })
       setShareStatus(null)
       clearShareHash()
     } catch (e) {
@@ -178,21 +190,21 @@ function App() {
     setParseWarnings([])
     setSourceLabel('built-in sample')
     setBaseName('rainbow_torus')
-    setShareSource({ kind: 'sample' })
+    setSource({ kind: 'sample' })
     setShareStatus(null)
     clearShareHash()
   }
 
   const shareMesh = async () => {
-    if (!shareSource) return
+    if (!source) return
     setShareStatus(null)
     try {
       const url = await buildShareUrl({
         name: baseName,
-        formatId: shareSource.kind === 'file' ? shareSource.formatId : null,
+        formatId: source.kind === 'file' ? source.formatId : null,
         exportFormatId,
         viewMode,
-        bytes: shareSource.kind === 'file' ? shareSource.bytes : new Uint8Array(0),
+        bytes: source.kind === 'file' ? source.bytes : new Uint8Array(0),
       })
       if (url.length > MAX_SHARE_URL_CHARS) {
         setShareStatus({ kind: 'too-large', chars: url.length })
@@ -209,8 +221,19 @@ function App() {
     }
   }
 
+  // Size of the mesh exported to `format`, taken from the native source: the
+  // original bytes when it matches, meshio conversion otherwise; the sample
+  // has no native file, so it serializes from its common-form MeshData.
+  const exportSizeFor = async (format: MeshFormat): Promise<number> => {
+    if (source?.kind === 'file') {
+      if (source.formatId === format.id) return source.bytes.length
+      return estimateConvertSize(source.bytes, sourceFormat!, format)
+    }
+    return estimateExportSize(mesh!, format)
+  }
+
   const estimateSizes = async () => {
-    if (!mesh) return
+    if (!mesh || !source) return
     setError(null)
     setBusy('sizing')
     setExportSizes({})
@@ -221,7 +244,7 @@ function App() {
         (a, b) => (a.pyodidePackages?.length ?? 0) - (b.pyodidePackages?.length ?? 0),
       )
       for (const format of ordered) {
-        const size = await estimateExportSize(mesh, format)
+        const size = await exportSizeFor(format)
         setExportSizes((prev) => ({ ...(prev ?? {}), [format.id]: size }))
       }
     } catch (e) {
@@ -232,11 +255,22 @@ function App() {
   }
 
   const downloadExport = async () => {
-    if (!mesh) return
+    if (!mesh || !source) return
     setError(null)
     setBusy('exporting')
     try {
-      const bytes = await serializeMesh(mesh, exportFormat)
+      // Export from the native source of truth, not the viewer's MeshData:
+      // same format -> the original bytes untouched; different format ->
+      // meshio native-to-native; sample -> serialize its generated MeshData.
+      let bytes: Uint8Array<ArrayBuffer>
+      if (source.kind === 'file') {
+        bytes =
+          source.formatId === exportFormat.id
+            ? source.bytes
+            : await convertMesh(source.bytes, sourceFormat!, exportFormat)
+      } else {
+        bytes = await serializeMesh(mesh, exportFormat)
+      }
       const base = baseName.replace(/[^\w-]+/g, '_').toLowerCase() || 'mesh'
       const blob = new Blob([bytes], { type: 'application/octet-stream' })
       const url = URL.createObjectURL(blob)
@@ -322,7 +356,11 @@ function App() {
               ))}
             </select>
             <p className="format-blurb">{exportFormat.blurb}</p>
-            {losses.length > 0 ? (
+            {identicalToSource ? (
+              <div className="ok">
+                Same as the source format — you get the original file back, byte for byte.
+              </div>
+            ) : losses.length > 0 ? (
               <div className="warning">
                 Exporting to {exportFormat.extension} will drop:{' '}
                 <strong>{losses.join(', ')}</strong>
@@ -340,7 +378,7 @@ function App() {
           </section>
         )}
 
-        {mesh && shareSource && (
+        {mesh && source && (
           <section>
             <h2>Share</h2>
             <button onClick={shareMesh} disabled={busy !== null}>

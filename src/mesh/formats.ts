@@ -44,15 +44,17 @@ export const formats: MeshFormat[] = [
     label: 'STL',
     extension: '.stl',
     blurb:
-      'The 3D-printing staple: a bare triangle soup (written binary). Facet normals are ' +
-      'recomputed from geometry; vertex normals and colors cannot be stored.',
+      'The 3D-printing staple: a bare triangle soup (written binary). Per-facet normals ' +
+      'are kept when present (else recomputed); vertex normals and colors cannot be stored.',
     capabilities: { normals: false, colors: false },
   },
   {
     id: 'off',
     label: 'OFF (Object File Format)',
     extension: '.off',
-    blurb: 'Minimal academic text format: vertex coordinates and faces, nothing else.',
+    blurb:
+      'Minimal academic text format: vertex coordinates and triangle faces, nothing else ' +
+      '(quad/color OFF variants are not supported by meshio).',
     capabilities: { normals: false, colors: false },
   },
   {
@@ -78,9 +80,9 @@ export const formats: MeshFormat[] = [
     label: 'Gmsh MSH',
     extension: '.msh',
     blurb:
-      'Native format of the Gmsh mesh generator (v4.1 binary). This app writes geometry ' +
-      'only — normals and colors are dropped.',
-    capabilities: { normals: false, colors: false },
+      'Native format of the Gmsh mesh generator (v4.1 binary). Normals and colors travel ' +
+      'as NodeData point-data arrays.',
+    capabilities: { normals: true, colors: true },
   },
   {
     id: 'xdmf',
@@ -153,15 +155,19 @@ export const formats: MeshFormat[] = [
     id: 'mdpa',
     label: 'MDPA (Kratos)',
     extension: '.mdpa',
-    blurb: 'Input format of the Kratos multiphysics framework. Geometry only.',
+    blurb:
+      'Input format of the Kratos multiphysics framework. Geometry only — meshio writes ' +
+      'mesh data corruptly, so the app strips it to keep the file valid.',
     capabilities: { normals: false, colors: false },
   },
   {
     id: 'tecplot',
     label: 'Tecplot',
     extension: '.dat',
-    blurb: 'Tecplot ASCII data format. Geometry only.',
-    capabilities: { normals: false, colors: false },
+    blurb:
+      'Tecplot ASCII data format. Normals and colors travel as per-node variables ' +
+      '(nx/ny/nz, red/green/blue).',
+    capabilities: { normals: true, colors: true },
   },
   {
     id: 'dolfin-xml',

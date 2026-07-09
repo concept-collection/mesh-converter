@@ -141,6 +141,62 @@ export async function parseMeshFile(
   return { mesh, info }
 }
 
+/**
+ * Native -> native conversion: write the original file bytes into /work and
+ * run convert_mesh, returning [pyodide, outPath, byteLength]. Both formats'
+ * extra packages are ensured — the source format's are needed to read, the
+ * target's to write.
+ */
+async function runConvert(
+  bytes: Uint8Array,
+  srcFormat: MeshFormat,
+  dstFormat: MeshFormat,
+): Promise<[Pyodide, string, number]> {
+  const pyodide = await initMeshio()
+  await ensurePackages(pyodide, srcFormat)
+  await ensurePackages(pyodide, dstFormat)
+  pyodide.FS.mkdirTree('/work')
+  const inPath = '/work/convert_in' + srcFormat.extension
+  const outPath = '/work/convert_out' + dstFormat.extension
+  pyodide.FS.writeFile(inPath, bytes)
+  const result = runBridge(
+    pyodide,
+    `convert_mesh(${JSON.stringify(inPath)}, ${JSON.stringify(srcFormat.id)}, ` +
+      `${JSON.stringify(outPath)}, ${JSON.stringify(dstFormat.id)})`,
+  )
+  pyodide.FS.unlink(inPath)
+  const { byteLength } = JSON.parse(result) as { byteLength: number }
+  return [pyodide, outPath, byteLength]
+}
+
+/**
+ * Convert the original file bytes from `srcFormat` to `dstFormat` through
+ * meshio directly (no detour through the viewer's common representation), so
+ * only what `dstFormat` cannot express is lost. Callers should short-circuit
+ * the same-format case and hand back the original bytes untouched.
+ */
+export async function convertMesh(
+  bytes: Uint8Array,
+  srcFormat: MeshFormat,
+  dstFormat: MeshFormat,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const [pyodide, outPath] = await runConvert(bytes, srcFormat, dstFormat)
+  const out = pyodide.FS.readFile(outPath)
+  pyodide.FS.unlink(outPath)
+  return out
+}
+
+/** Byte size `bytes` would have converted to `dstFormat`, without keeping the bytes. */
+export async function estimateConvertSize(
+  bytes: Uint8Array,
+  srcFormat: MeshFormat,
+  dstFormat: MeshFormat,
+): Promise<number> {
+  const [pyodide, outPath, byteLength] = await runConvert(bytes, srcFormat, dstFormat)
+  pyodide.FS.unlink(outPath)
+  return byteLength
+}
+
 /** Write the mesh arrays into /work and run serialize_mesh; returns [pyodide, outPath, byteLength]. */
 async function runSerialize(
   mesh: MeshData,
@@ -166,6 +222,11 @@ async function runSerialize(
   return [pyodide, outPath, byteLength]
 }
 
+/**
+ * Serialize the common-form `MeshData` to `format`. Used for the generated
+ * sample mesh, which has no original file; uploaded files export losslessly
+ * through {@link convertMesh} from their original bytes instead.
+ */
 export async function serializeMesh(
   mesh: MeshData,
   format: MeshFormat,

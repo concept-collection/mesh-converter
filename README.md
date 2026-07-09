@@ -18,7 +18,7 @@ the jsDelivr CDN, cached afterwards).
 | OFF (Object File Format) | `.off` | ✓ | — | — | |
 | VTK legacy | `.vtk` | ✓ | ✓ | ✓ | |
 | VTU (VTK XML) | `.vtu` | ✓ | ✓ | ✓ | |
-| Gmsh MSH | `.msh` | ✓ | — | — | |
+| Gmsh MSH | `.msh` | ✓ | ✓ | ✓ | |
 | XDMF | `.xdmf` | ✓ | ✓ | ✓ | h5py† |
 | MED (Salome) | `.med` | ✓ | ✓ | ✓ | h5py† |
 | H5M (MOAB) | `.h5m` | ✓ | ✓ | ✓ | h5py† |
@@ -28,7 +28,7 @@ the jsDelivr CDN, cached afterwards).
 | Medit | `.mesh` | ✓ | — | — | |
 | Netgen | `.vol` | ✓ | — | — | |
 | MDPA (Kratos) | `.mdpa` | ✓ | — | — | |
-| Tecplot | `.dat` | ✓ | — | — | |
+| Tecplot | `.dat` | ✓ | ✓ | ✓ | |
 | DOLFIN XML | `.xml` | ✓ | — | — | |
 | PERMAS | `.post` | ✓ | — | — | |
 
@@ -36,11 +36,26 @@ the jsDelivr CDN, cached afterwards).
 lazily the first time such a format is used, so the default footprint stays
 small.
 
-✓ marks what this app preserves when writing the format: vertex normals map to
-each format's native representation (`nx/ny/nz` properties in PLY, `vn` lines
-in OBJ, a `Normals` point-data array elsewhere) and vertex colors likewise
-(`red/green/blue` in PLY, an `RGB` point-data array elsewhere). On import,
-quads and polygons are fan-triangulated; volume cells are skipped.
+A loaded file is kept in its original bytes, in its original format — that is
+the source of truth. Export runs meshio directly on those bytes
+(`read` the original, `write` the target), so a conversion drops only what the
+target format genuinely cannot express, and exporting back to the *same* format
+returns the original file byte-for-byte with no conversion at all. During
+conversion the app translates vertex normals and colors between the formats'
+native representations (so PLY's `nx/ny/nz` properties become `vn` lines in
+OBJ, and so on), normalizes byte order and integer widths where meshio's
+writers are picky about dtypes, and strips data that meshio 5.3.5 would write
+corruptly (MDPA mesh data) or crash on (H5M and DOLFIN XML cell data). The 3D
+view is fed by a separate, triangle-only "common" representation: quads and
+polygons are fan-triangulated and volume cells are skipped *for display*, but
+none of that touches what gets exported.
+
+✓ marks the attributes the app tracks for its loss warnings, and is how it
+writes the generated sample mesh (which, unlike an uploaded file, has no
+original bytes): vertex normals map to each format's native representation
+(`nx/ny/nz` scalars in PLY and Tecplot, `vn` lines in OBJ, a `Normals`
+point-data array elsewhere) and vertex colors likewise (`red/green/blue` in
+PLY and Tecplot, an `RGB` point-data array elsewhere).
 
 Some meshio formats are deliberately absent: ansys, cgns, su2, and ugrid
 cannot roundtrip their own output in meshio 5.3.5; exodus fails writing under
@@ -74,14 +89,19 @@ Built with Vite, React, TypeScript, and three.js (react-three-fiber).
 
 ## How it works
 
-- `src/mesh/bridge.py` runs inside Pyodide: it reads/writes mesh files with
-  meshio and exchanges arrays with JS as raw little-endian buffers through
-  Pyodide's in-memory filesystem.
+- `src/mesh/bridge.py` runs inside Pyodide with three entry points:
+  `parse_mesh_file` (native file → the triangle-only common form that feeds the
+  viewer), `convert_mesh` (native → native, straight through meshio, the export
+  path for uploaded files), and `serialize_mesh` (common form → native, used
+  only for the generated sample). It exchanges arrays with JS as raw
+  little-endian buffers through Pyodide's in-memory filesystem.
 - `src/mesh/meshio.ts` loads Pyodide (script tag in `index.html`), installs
-  meshio via micropip, and wraps the bridge in typed async
-  `parseMeshFile`/`serializeMesh` functions built on the internal `MeshData`
-  representation (typed arrays of positions, triangle indices, optional
-  normals/colors).
+  meshio via micropip, and wraps the bridge in typed async functions:
+  `parseMeshFile` for the viewer's `MeshData` (typed arrays of positions,
+  triangle indices, optional normals/colors), `convertMesh` for lossless
+  native-to-native export, and `serializeMesh` for the sample. `App.tsx` keeps
+  the loaded file's original bytes as the source of truth and routes export
+  through them — same-format exports skip meshio entirely.
 - `src/mesh/formats.ts` declares the supported formats and which attributes
   each preserves; the upload, capability table, and loss-warning UI derive
   from it. To add a meshio-supported format, add a descriptor there (with
