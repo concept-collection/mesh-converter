@@ -61,6 +61,7 @@ function App() {
   const [busy, setBusy] = useState<'parsing' | 'exporting' | 'sizing' | null>(null)
   const [exportSizes, setExportSizes] = useState<Record<string, number> | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('both')
+  const [anaglyph, setAnaglyph] = useState(false)
   const [source, setSource] = useState<MeshSource | null>(null)
   const [shareStatus, setShareStatus] = useState<ShareStatus | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -116,6 +117,7 @@ function App() {
       if (VIEW_MODES.some((m) => m.id === payload.viewMode)) {
         setViewMode(payload.viewMode as ViewMode)
       }
+      setAnaglyph(payload.anaglyph)
       if (payload.formatId === null) {
         setMesh(makeSampleMesh())
         setSource({ kind: 'sample' })
@@ -204,6 +206,7 @@ function App() {
         formatId: source.kind === 'file' ? source.formatId : null,
         exportFormatId,
         viewMode,
+        anaglyph,
         bytes: source.kind === 'file' ? source.bytes : new Uint8Array(0),
       })
       if (url.length > MAX_SHARE_URL_CHARS) {
@@ -469,7 +472,13 @@ function App() {
 
       <div className="viewport">
         {mesh ? (
-          <MeshView mesh={mesh} mode={viewMode} onModeChange={setViewMode} />
+          <MeshView
+            mesh={mesh}
+            mode={viewMode}
+            onModeChange={setViewMode}
+            anaglyph={anaglyph}
+            onAnaglyphChange={setAnaglyph}
+          />
         ) : (
           <div className="empty-state">
             <p>No mesh loaded.</p>

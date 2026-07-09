@@ -1,7 +1,8 @@
 import { useEffect, useMemo } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
+import { AnaglyphEffect } from 'three/addons/effects/AnaglyphEffect.js'
 import type { MeshData } from './mesh/types'
 import { VIEW_MODES } from './viewModes'
 import type { ViewMode } from './viewModes'
@@ -80,14 +81,40 @@ function MeshObject({ mesh, mode }: { mesh: MeshData; mode: ViewMode }) {
   )
 }
 
+// While mounted, replaces the normal render with three's AnaglyphEffect
+// (red/cyan stereo); a useFrame subscriber with priority > 0 suspends
+// react-three-fiber's own render loop
+function AnaglyphRenderer() {
+  const gl = useThree((s) => s.gl)
+  const size = useThree((s) => s.size)
+  const effect = useMemo(() => new AnaglyphEffect(gl), [gl])
+  useEffect(() => () => effect.dispose(), [effect])
+  useEffect(() => {
+    effect.setSize(size.width, size.height)
+  }, [effect, size])
+  useFrame(({ scene, camera, controls }) => {
+    // Zero parallax at the orbit target, eye separation proportional to the
+    // viewing distance, so stereo depth stays comfortable at any zoom
+    const target = (controls as unknown as { target?: THREE.Vector3 } | null)?.target
+    effect.planeDistance = target ? camera.position.distanceTo(target) : camera.position.length()
+    effect.eyeSep = effect.planeDistance * 0.02
+    effect.render(scene, camera)
+  }, 1)
+  return null
+}
+
 export function MeshView({
   mesh,
   mode,
   onModeChange,
+  anaglyph,
+  onAnaglyphChange,
 }: {
   mesh: MeshData
   mode: ViewMode
   onModeChange: (mode: ViewMode) => void
+  anaglyph: boolean
+  onAnaglyphChange: (on: boolean) => void
 }) {
   return (
     <>
@@ -101,6 +128,13 @@ export function MeshView({
             {m.label}
           </button>
         ))}
+        <button
+          className={`sep ${anaglyph ? 'active' : ''}`}
+          onClick={() => onAnaglyphChange(!anaglyph)}
+          title="Anaglyph stereo — view with red/cyan 3D glasses"
+        >
+          3D
+        </button>
       </div>
       <Canvas camera={{ position: [2.6, 1.8, 2.6], fov: 45 }}>
         <color attach="background" args={['#16181d']} />
@@ -109,6 +143,7 @@ export function MeshView({
         <directionalLight position={[-4, -3, -6]} intensity={0.4} />
         <MeshObject mesh={mesh} mode={mode} />
         <OrbitControls makeDefault />
+        {anaglyph && <AnaglyphRenderer />}
       </Canvas>
     </>
   )

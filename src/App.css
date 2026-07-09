@@ -283,6 +283,11 @@ input.share-url {
   border-left: 1px solid #3a4150;
 }
 
+/* separates the anaglyph toggle from the mutually-exclusive mode group */
+.view-toolbar button.sep {
+  border-left: 3px double #3a4150;
+}
+
 .view-toolbar button:hover {
   background: #2a2f39;
   color: #e2e5ea;

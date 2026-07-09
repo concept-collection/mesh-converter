@@ -2,7 +2,8 @@
 
 A static web app for converting meshes between formats: upload a mesh file,
 inspect it in an interactive 3D view (shaded, wireframe, shaded + wireframe,
-or points), and download it in a format of your choice. Formats differ in what they can store, and the UI shows exactly which
+or points, with an optional anaglyph stereo mode for red/cyan 3D glasses),
+and download it in a format of your choice. Formats differ in what they can store, and the UI shows exactly which
 attributes (normals, colors) would be dropped by a lossy conversion.
 
 Conversion is powered by [meshio](https://github.com/nschloe/meshio) running

@@ -16,6 +16,8 @@ export interface SharePayload {
   formatId: string | null
   exportFormatId: string
   viewMode: string
+  /** Anaglyph (red/cyan 3D glasses) rendering toggle */
+  anaglyph: boolean
   /** Original file bytes (empty when formatId is null) */
   bytes: Uint8Array<ArrayBuffer>
 }
@@ -35,6 +37,8 @@ interface ShareHeader {
   format: string | null
   export: string
   view: string
+  /** 1 when anaglyph mode is on; absent in links from older versions */
+  ana?: number
 }
 
 async function pipeThrough(
@@ -70,6 +74,7 @@ export async function encodeShare(payload: SharePayload): Promise<string> {
     format: payload.formatId,
     export: payload.exportFormatId,
     view: payload.viewMode,
+    ana: payload.anaglyph ? 1 : 0,
   }
   const headerBytes = new TextEncoder().encode(JSON.stringify(header))
   const container = new Uint8Array(4 + headerBytes.length + payload.bytes.length)
@@ -106,6 +111,7 @@ export async function decodeShare(encoded: string): Promise<SharePayload> {
     formatId: header.format ?? null,
     exportFormatId: header.export,
     viewMode: header.view,
+    anaglyph: header.ana === 1,
     bytes: container.slice(4 + headerLength),
   }
 }
