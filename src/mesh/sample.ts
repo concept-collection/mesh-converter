@@ -14,6 +14,7 @@ export function makeSampleMesh(): MeshData {
   const normals: number[] = []
   const colors: number[] = []
   const indices: number[] = []
+  const edges: number[] = []
 
   for (let i = 0; i < nu; i++) {
     const u = (i / nu) * 2 * Math.PI
@@ -35,12 +36,16 @@ export function makeSampleMesh(): MeshData {
       const c = i * nv + ((j + 1) % nv)
       const d = ((i + 1) % nu) * nv + ((j + 1) % nv)
       indices.push(a, b, d, a, d, c)
+      // wireframe follows the quads; the surface wraps, so each quad's a-b
+      // and a-c edges cover every edge exactly once
+      edges.push(a, b, a, c)
     }
   }
 
   return {
     positions: new Float32Array(positions),
     indices: new Uint32Array(indices),
+    edges: new Uint32Array(edges),
     normals: new Float32Array(normals),
     colors: new Float32Array(colors),
   }

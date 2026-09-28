@@ -14,8 +14,9 @@
 #
 # Arrays cross the JS/Python boundary as little-endian binary files in
 # Pyodide's in-memory filesystem (positions/normals/colors as float32
-# xyz-triples, indices as uint32 triangle triples); each call returns a JSON
-# string with counts, flags, and warnings. See meshio.ts for the JS side.
+# xyz-triples, indices as uint32 triangle triples, edges as uint32 pairs);
+# each call returns a JSON string with counts, flags, and warnings. See
+# meshio.ts for the JS side.
 
 import json
 import os
@@ -28,6 +29,7 @@ WORK = "/work"
 
 POSITIONS_F32 = WORK + "/positions.f32"
 INDICES_U32 = WORK + "/indices.u32"
+EDGES_U32 = WORK + "/edges.u32"
 NORMALS_F32 = WORK + "/normals.f32"
 COLORS_F32 = WORK + "/colors.f32"
 
@@ -64,8 +66,11 @@ _OBJ_POINT_DATA_NAMES = {"obj:vt": "texture coordinates", "obj:vn": "vertex norm
 
 
 def _triangulate_cells(mesh, warnings):
-    """Collect surface cells as triangles, fan-triangulating quads/polygons."""
+    """Collect surface cells as triangles (fan-triangulating quads/polygons)
+    plus the unique undirected edges of the original polygons, so the viewer's
+    wireframe can show the mesh as authored instead of the triangulation."""
     tri_blocks = []
+    edge_blocks = []
     skipped = []
     for block in mesh.cells:
         data = block.data
@@ -82,6 +87,10 @@ def _triangulate_cells(mesh, warnings):
                 warnings.append(f"{len(data)} {block.type} cells triangulated")
         else:
             skipped.append(block.type)
+            continue
+        edge_blocks.append(
+            np.column_stack([data.ravel(), np.roll(data, -1, axis=1).ravel()])
+        )
     if skipped:
         warnings.append("skipped non-surface cells: " + ", ".join(sorted(set(skipped))))
     if not tri_blocks:
@@ -89,7 +98,10 @@ def _triangulate_cells(mesh, warnings):
         raise ValueError(
             f"No surface cells (triangle/quad/polygon) found; cell types in file: {found}"
         )
-    return np.ascontiguousarray(np.vstack(tri_blocks).astype(np.uint32))
+    edges = np.vstack(edge_blocks).astype(np.uint32)
+    edges.sort(axis=1)
+    edges = np.ascontiguousarray(np.unique(edges, axis=0))
+    return np.ascontiguousarray(np.vstack(tri_blocks).astype(np.uint32)), edges
 
 
 # Formats whose meshio writer+reader round-trip vertex normals/colors via the
@@ -195,7 +207,7 @@ def parse_mesh_file(path, file_format=None):
         warnings.append("2D points: added z=0")
     points = np.ascontiguousarray(points[:, :3])
 
-    triangles = _triangulate_cells(mesh, warnings)
+    triangles, edges = _triangulate_cells(mesh, warnings)
     if triangles.size and int(triangles.max()) >= len(points):
         raise ValueError(
             f"Face index {int(triangles.max())} out of range (0..{len(points) - 1})"
@@ -213,6 +225,8 @@ def parse_mesh_file(path, file_format=None):
         f.write(points.tobytes())
     with open(INDICES_U32, "wb") as f:
         f.write(triangles.tobytes())
+    with open(EDGES_U32, "wb") as f:
+        f.write(edges.tobytes())
     if normals is not None:
         with open(NORMALS_F32, "wb") as f:
             f.write(np.ascontiguousarray(normals).tobytes())
@@ -235,6 +249,7 @@ def parse_mesh_file(path, file_format=None):
         {
             "numVertices": len(points),
             "numFaces": len(triangles),
+            "numEdges": len(edges),
             "hasNormals": normals is not None,
             "hasColors": colors is not None,
             "warnings": warnings,

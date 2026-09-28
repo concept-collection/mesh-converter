@@ -10,7 +10,7 @@ import type { ViewMode } from './viewModes'
 const PLAIN_COLOR = '#8fb4d9'
 
 function MeshObject({ mesh, mode }: { mesh: MeshData; mode: ViewMode }) {
-  const geometry = useMemo(() => {
+  const { geometry, edgeGeometry } = useMemo(() => {
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.Float32BufferAttribute(mesh.positions, 3))
     g.setIndex(new THREE.Uint32BufferAttribute(mesh.indices, 1))
@@ -25,10 +25,27 @@ function MeshObject({ mesh, mode }: { mesh: MeshData; mode: ViewMode }) {
     // Center and scale to a consistent size so the fixed camera always frames it
     g.center()
     g.computeBoundingSphere()
-    return g
+    // The wireframe draws the original polygon edges (quads stay quads rather
+    // than showing triangulation diagonals), sharing the centered vertex
+    // attributes with the surface geometry
+    let e: THREE.BufferGeometry | null = null
+    if (mesh.edges) {
+      e = new THREE.BufferGeometry()
+      e.setAttribute('position', g.getAttribute('position'))
+      if (mesh.colors) e.setAttribute('color', g.getAttribute('color'))
+      e.setIndex(new THREE.Uint32BufferAttribute(mesh.edges, 1))
+      e.boundingSphere = g.boundingSphere
+    }
+    return { geometry: g, edgeGeometry: e }
   }, [mesh])
 
-  useEffect(() => () => geometry.dispose(), [geometry])
+  useEffect(
+    () => () => {
+      geometry.dispose()
+      edgeGeometry?.dispose()
+    },
+    [geometry, edgeGeometry],
+  )
 
   const scale = 1.6 / (geometry.boundingSphere?.radius || 1)
   const useVertexColors = !!mesh.colors
@@ -53,20 +70,31 @@ function MeshObject({ mesh, mode }: { mesh: MeshData; mode: ViewMode }) {
           />
         </mesh>
       )}
-      {(mode === 'wire' || mode === 'both') && (
-        <mesh geometry={geometry}>
-          <meshBasicMaterial
-            key={matKey}
-            wireframe
-            // over the shaded surface use thin dark lines; standalone
-            // wireframe keeps the mesh's own coloring
-            vertexColors={mode === 'wire' && useVertexColors}
-            color={mode === 'both' ? '#10161f' : useVertexColors ? 'white' : PLAIN_COLOR}
-            transparent={mode === 'both'}
-            opacity={mode === 'both' ? 0.35 : 1}
-          />
-        </mesh>
-      )}
+      {(mode === 'wire' || mode === 'both') &&
+        (edgeGeometry ? (
+          <lineSegments geometry={edgeGeometry}>
+            <lineBasicMaterial
+              key={matKey}
+              // over the shaded surface use thin dark lines; standalone
+              // wireframe keeps the mesh's own coloring
+              vertexColors={mode === 'wire' && useVertexColors}
+              color={mode === 'both' ? '#10161f' : useVertexColors ? 'white' : PLAIN_COLOR}
+              transparent={mode === 'both'}
+              opacity={mode === 'both' ? 0.35 : 1}
+            />
+          </lineSegments>
+        ) : (
+          <mesh geometry={geometry}>
+            <meshBasicMaterial
+              key={matKey}
+              wireframe
+              vertexColors={mode === 'wire' && useVertexColors}
+              color={mode === 'both' ? '#10161f' : useVertexColors ? 'white' : PLAIN_COLOR}
+              transparent={mode === 'both'}
+              opacity={mode === 'both' ? 0.35 : 1}
+            />
+          </mesh>
+        ))}
       {mode === 'points' && (
         <points geometry={geometry}>
           <pointsMaterial

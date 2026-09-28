@@ -17,7 +17,7 @@ import {
 } from './mesh/meshio'
 import { makeSampleMesh } from './mesh/sample'
 import { buildShareUrl, MAX_SHARE_URL_CHARS, parseShareHash } from './share'
-import spotUrl from './assets/spot_triangulated.obj?url'
+import spotUrl from './assets/spot_quadrangulated.obj?url'
 import './App.css'
 
 type EngineState = 'loading' | 'ready' | 'error'

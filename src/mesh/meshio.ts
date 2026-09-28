@@ -13,6 +13,7 @@ const MESHIO_SPEC = 'meshio==5.3.5'
 
 const POSITIONS_F32 = '/work/positions.f32'
 const INDICES_U32 = '/work/indices.u32'
+const EDGES_U32 = '/work/edges.u32'
 const NORMALS_F32 = '/work/normals.f32'
 const COLORS_F32 = '/work/colors.f32'
 
@@ -36,6 +37,7 @@ declare global {
 export interface ParseInfo {
   numVertices: number
   numFaces: number
+  numEdges: number
   hasNormals: boolean
   hasColors: boolean
   warnings: string[]
@@ -134,6 +136,7 @@ export async function parseMeshFile(
   const mesh: MeshData = {
     positions: readF32(pyodide, POSITIONS_F32),
     indices: readU32(pyodide, INDICES_U32),
+    edges: info.numEdges > 0 ? readU32(pyodide, EDGES_U32) : null,
     normals: info.hasNormals ? readF32(pyodide, NORMALS_F32) : null,
     colors: info.hasColors ? readF32(pyodide, COLORS_F32) : null,
   }
